@@ -1,108 +1,101 @@
-🚦 Traffic Light & Crosswalk Controller
-Group Project – Arduino UNO R3
+# 🚦 Traffic Light & Crosswalk Controller
+**Group Project – Arduino UNO R3**
 
-This project implements a fully functional traffic intersection controller using an Arduino UNO R3, two breadboards, LEDs, buttons, and hardware interrupts.
-It simulates a real-world intersection with North/South and East/West lanes, each with their own traffic lights and pedestrian crosswalks.
+This project implements a fully functional **traffic intersection controller** using an Arduino UNO R3, two breadboards, LEDs, buttons, and hardware interrupts.  
+It simulates a real-world intersection with **North/South** and **East/West** lanes, each with their own traffic lights and pedestrian crosswalks.
 
-📌 Project Overview
+---
 
-The circuit includes:
+## 📌 Project Overview
 
-Two-direction traffic lights (North/South and East/West), each with:
+**Circuit includes:**
 
-Red, Yellow, and Green LEDs
+### Traffic Lights (Two Directions)
+- Red LED  
+- Yellow LED  
+- Green LED
 
-Two pedestrian crosswalks, each with:
+### Pedestrian Crosswalks (Two total)
+- Crosswalk push-button  
+- White **“Walk”** LED  
+- Red **“Don’t Walk”** LED
 
-A crosswalk button
+Also included: a wiring layout demonstrating Arduino UNO R3 connections, resistors, LEDs, and buttons.
 
-White “Walk” LED
+**Goal:** implement Arduino code that controls the traffic cycle, pedestrian signals, and interrupt-driven crosswalk requests.
 
-Red “Don’t Walk” LED
+---
 
-A wiring layout showing resistors, LEDs, buttons, and Arduino UNO R3 connections.
+## ✅ Requirements
 
-The goal of this project is to write Arduino code that correctly controls the full traffic cycle, pedestrian signals, and interrupt-driven crosswalk requests.
+### 1. Traffic Light Timing
+- Implement the standard traffic sequence: **Green → Yellow → Red**  
+- Include a **Both-Red phase (safety delay)** where both directions display Red briefly before switching to the next Green.  
+  - This reflects real-world intersections to allow vehicles to clear the intersection and reduce collision risk.
 
-✅ Requirements
-1. Traffic Light Timing
+**Timing rule:** No phase may be shorter than **2–3 seconds** (each phase must be long enough to observe clearly).
 
-Implement the standard traffic sequence:
+---
 
-Green → Yellow → Red
+### 2. Crosswalk Control
+- Each crosswalk button uses an **external interrupt** to set a “walk requested” flag.  
+- When the corresponding lane enters its next **Red** phase, the White **Walk** LED is activated if a request is pending.  
+- The Red **Don’t Walk** LED is shown when crossing is not permitted.
 
-Both-Red phase (safety delay)
+---
 
-Both directions remain Red briefly before switching
+### 3. Hardware Timers & Interrupts (Required)
 
-This reflects real-world intersections, giving time to clear the intersection and avoid collisions.
+#### ✔ Hardware Timer Interrupt
+- Use a periodic hardware timer interrupt (e.g., every **10–100 ms**) to maintain counters that drive the traffic state machine.
 
-⏱ Timing Rule:
-No phase may be shorter than 2–3 seconds, ensuring the sequence is clearly observable.
+#### ✔ External Interrupts
+- Each pedestrian button has an ISR that sets a request flag, for example:
+  - `walkRequested_NS`
+  - `walkRequested_EW`
+- The main loop checks these flags and begins the walk cycle during the next available Red phase.
 
-2. Crosswalk Control
+---
 
-Each crosswalk button:
+### 4. Extra Credit (+5%)
+- Blink the White **Walk** LED during the **last half** of the walk interval to signal pedestrians to finish crossing.
 
-Uses an external interrupt to set a “walk requested” flag
+---
 
-Triggers the White “Walk” LED during the next Red phase for that direction
-
-Activates the Red “Don’t Walk” LED during unsafe periods
-
-3. Hardware Timers & Interrupts (Required)
-✔ Hardware Timer Interrupt
-
-A periodic interrupt (e.g., every 10–100 ms) updates timing counters that drive the traffic state machine.
-
-✔ External Interrupts
-
-Each pedestrian button has an ISR that sets a request flag:
-
-walkRequested_NS
-
-walkRequested_EW
-
-The main loop checks these flags and starts the walk cycle during the next available Red phase.
-
-4. Extra Credit (+5%)
-
-During the second half of the pedestrian walk interval, the White LED blinks, signaling the pedestrian to finish crossing.
-
-📂 Deliverables
+## 📂 Deliverables
 
 This repository includes:
 
-Arduino source code (.ino) implementing:
+- Arduino source file: `traffic_controller.ino` implementing:
+  - Full traffic light timing sequence
+  - Crosswalk request behavior using interrupts
+  - Hardware timer usage
+- Documentation and inline comments explaining the design and state transitions
 
-Full traffic light timing sequence
+---
 
-Crosswalk behavior with interrupts
+## 🛠 Technologies Used
 
-Hardware timer usage
+- **Arduino UNO R3**  
+- Hardware timers (e.g., `Timer1`)  
+- External interrupts (`attachInterrupt()`)  
+- LEDs, resistors, push-buttons  
+- Breadboard wiring
 
-Documentation and comments explaining the design
+---
 
-🛠 Technologies Used
+## 🎯 Learning Outcomes
 
-Arduino UNO R3
+- State machine design  
+- Real-time embedded system behavior  
+- Interrupt-driven programming  
+- Timing control using hardware timers  
+- Practical traffic engineering concepts
 
-Hardware timers (Timer1 recommended)
+---
 
-External interrupts (attachInterrupt())
+## 📎 Notes / Suggestions
+- Recommend using `Timer1` for the periodic timer and `attachInterrupt()` for button ISRs.  
+- Ensure debouncing strategy for push-buttons (hardware or software).  
+- Comment the code to explain why the both-Red safety delay exists (real-world justification).
 
-LEDs, resistors, push-buttons
-
-Breadboard-based wiring
-
-🎯 Learning Outcomes
-
-State machine design
-
-Real-time embedded system behavior
-
-Interrupt-driven programming
-
-Timing control using hardware timers
-
-Practical traffic engineering concepts
