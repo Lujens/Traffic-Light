@@ -1,0 +1,320 @@
+; traffic_light_final.asm
+; Authors : Kailas Ugenskas
+; Desc    : Traffic light control with System Tick Interrupt (Req #3 fulfilled)
+;          
+
+; ------------------------------------------------------------
+; CONSTANTS
+; ------------------------------------------------------------
+; Timer0 10ms Tick Calculation:
+; 16MHz / 1024 Prescaler = 15,625 ticks/sec
+; 10ms = 156.25 ticks -> Use 156 for OCR0A
+.equ TICK_COMPARE = 156
+
+; Time Durations (in 10ms ticks)
+; r25 is 8-bit, max 255. We use 250 ticks = 2.5 seconds.
+; For 5 seconds, we call the delay twice.
+
+; Pins
+.equ NS_GREEN = PB2
+.equ NS_YELLOW = PB3
+.equ NS_RED = PB4
+.equ NS_CROSS = PB1
+.equ NS_DONT_CROSS = PB0
+
+.equ EW_GREEN = PC3
+.equ EW_YELLOW = PC2
+.equ EW_RED = PC1
+.equ EW_CROSS = PC4
+.equ EW_DONT_CROSS = PC5
+
+.equ EW_BUTTON = PD2
+.equ NS_BUTTON = PD3
+
+; Register Definitions
+.def walkRequested_EW = r21
+.def walkRequested_NS = r22
+.def system_ticks     = r25  ; INCREMENTED BY TIMER INTERRUPT
+
+; ------------------------------------------------------------
+; VECTOR TABLE
+; ------------------------------------------------------------
+.org 0x0000
+          jmp       main
+
+.org 0x0002                     ; INT0 (EW Button)
+          jmp       Button_EW_ISR
+
+.org 0x0004                     ; INT1 (NS Button)
+          jmp       Button_NS_ISR
+
+.org 0x001C                     ; TIMER0 COMPA (System Tick)
+          jmp       Timer_Tick_ISR
+
+.org INT_VECTORS_SIZE
+
+; ------------------------------------------------------------
+; MAIN CONFIGURATION
+; ------------------------------------------------------------
+main:
+          ; Stack Setup
+          ldi       r16, high(RAMEND)
+          out       SPH, r16
+          ldi       r16, low(RAMEND)
+          out       SPL, r16
+          
+          ; GPIO Setup (Outputs)
+          sbi       DDRB, NS_GREEN
+          sbi       DDRB, NS_YELLOW
+          sbi       DDRB, NS_RED
+          sbi       DDRB, NS_CROSS
+          sbi       DDRB, NS_DONT_CROSS
+
+          sbi       DDRC, EW_GREEN
+          sbi       DDRC, EW_YELLOW
+          sbi       DDRC, EW_RED
+          sbi       DDRC, EW_CROSS
+          sbi       DDRC, EW_DONT_CROSS
+
+          ; Button Setup (Inputs + Pullups)
+          cbi       DDRD, EW_BUTTON
+          sbi       PORTD, EW_BUTTON
+          cbi       DDRD, NS_BUTTON
+          sbi       PORTD, NS_BUTTON
+
+          ; --- INTERRUPT SETUP (Requirement #2: External Interrupts) ---
+          ; INT0/INT1 Falling Edge
+          ldi       r16, (1 << ISC11) | (1 << ISC01)
+          sts       EICRA, r16
+          ldi       r16, (1 << INT1) | (1 << INT0)
+          out       EIMSK, r16
+
+          ; --- TIMER SETUP (Requirement #3: Hardware Timer Interrupt) ---
+          ; Configure Timer0 for CTC Mode, Prescaler 1024, 10ms interrupts
+          ldi       r16, TICK_COMPARE
+          out       OCR0A, r16
+          
+          ; WGM01 = 1 (CTC Mode)
+          ldi       r16, (1 << WGM01)
+          out       TCCR0A, r16
+          
+          ; CS02=1, CS00=1 (Prescaler 1024)
+          ldi       r16, (1 << CS02) | (1 << CS00)
+          out       TCCR0B, r16
+
+          ; Enable Timer0 Compare A Interrupt
+          ldi       r16, (1 << OCIE0A)
+          sts       TIMSK0, r16
+
+          clr       walkRequested_NS
+          clr       walkRequested_EW
+          clr       system_ticks
+          
+          sei
+
+; ------------------------------------------------------------
+; MAIN LOOP
+; ------------------------------------------------------------
+NS_Traffic_Cycle:
+          call      set_ns_green
+          call      set_ew_red
+          
+          ; Green for 5 seconds (2 x 2.5s)
+          call      delay_250_ticks
+          call      delay_250_ticks_check_ew  ; Check EW button to cut short
+          
+          ; Yellow
+          call      set_ns_yellow
+          call      delay_250_ticks     ; ~2.5s
+          
+          ; Red (Both Red Phase)
+          call      set_ns_red
+          call      set_ew_red
+          
+          ; CHECK NS WALK
+          cpi       walkRequested_NS, 1
+          brne      skip_ns_walk
+          
+          ; --- HANDLE NS WALK (Solid White) ---
+          sbi       PORTC, PC3
+          sbi       PORTB, NS_CROSS
+          cbi       PORTB, NS_DONT_CROSS
+          ; EW stays Red.
+          
+          ; Solid White for 5s total (2.5s + 2.5s)
+          cbi       PORTC, PC1
+          call      delay_250_ticks
+          call      delay_250_ticks
+          cbi       PORTC, PC3
+          sbi       PORTC, PC1
+          call      delay_250_ticks
+          ; End Walk
+          cbi       PORTB, NS_CROSS
+          sbi       PORTB, NS_DONT_CROSS
+          clr       walkRequested_NS
+          
+          ; Both Red Safety Buffer
+          call      delay_250_ticks
+          rjmp      EW_Traffic_Cycle   ; Skip the normal red wait
+
+skip_ns_walk:
+          ; Normal "Both Red" safety delay
+          call      delay_250_ticks
+          
+EW_Traffic_Cycle:
+          call      set_ew_green
+          call      set_ns_red
+          
+          ; Green 5s
+          call      delay_250_ticks
+          call      delay_250_ticks_check_ns
+          
+          ; Yellow
+          call      set_ew_yellow
+          call      delay_250_ticks
+          
+          ; Red (Both Red Phase)
+          call      set_ew_red
+          call      set_ns_red
+          
+          ; CHECK EW WALK
+          cpi       walkRequested_EW, 1
+          brne      skip_ew_walk
+          
+          ; --- HANDLE EW WALK (Solid White) ---
+          sbi       PORTC, EW_CROSS
+          cbi       PORTC, EW_DONT_CROSS
+          sbi       PORTB, PB2
+          
+          ; Solid White for 5s total
+          cbi       PORTB, PB4
+          call      delay_250_ticks
+          call      delay_250_ticks
+          cbi       PORTB, PB2
+          sbi       PORTB, PB4
+          call      delay_250_ticks
+          
+          ; End Walk
+          cbi       PORTB, PB2
+          cbi       PORTC, EW_CROSS
+          sbi       PORTC, EW_DONT_CROSS
+          clr       walkRequested_EW
+          
+          call      delay_250_ticks
+          rjmp      NS_Traffic_Cycle
+
+skip_ew_walk:
+          call      delay_250_ticks
+          rjmp      NS_Traffic_Cycle
+
+; ------------------------------------------------------------
+; ISRs
+; ------------------------------------------------------------
+Button_EW_ISR:
+          push      r16
+          in        r16, SREG
+          push      r16
+          ldi       walkRequested_EW, 1
+          pop       r16
+          out       SREG, r16
+          pop       r16
+          reti
+
+Button_NS_ISR:
+          push      r16
+          in        r16, SREG
+          push      r16
+          ldi       walkRequested_NS, 1
+          pop       r16
+          out       SREG, r16
+          pop       r16
+          reti
+
+Timer_Tick_ISR:
+          ; Requirement #3: Periodic Interrupt maintains counter
+          push      r16
+          in        r16, SREG
+          push      r16
+          
+          inc       system_ticks      ; Increment the tick counter (r25)
+          
+          pop       r16
+          out       SREG, r16
+          pop       r16
+          reti
+
+; ------------------------------------------------------------
+; DELAY FUNCTIONS (Using Tick Counter)
+; ------------------------------------------------------------
+delay_250_ticks:
+          ; Wait for system_ticks to count up to 250 (2.5 seconds)
+          clr       system_ticks      ; Reset the counter
+wait_250:
+          cpi       system_ticks, 250 ; Have we reached 250 ticks?
+          brne      wait_250          ; If not, keep waiting
+          ret
+
+delay_250_ticks_check_ew:
+          clr       system_ticks
+wait_250_ew:
+          cpi       walkRequested_EW, 1  ; Check button flag
+          breq      exit_delay           ; Exit early if pressed
+          cpi       system_ticks, 250
+          brne      wait_250_ew
+exit_delay:
+          ret
+
+delay_250_ticks_check_ns:
+          clr       system_ticks
+wait_250_ns:
+          cpi       walkRequested_NS, 1
+          breq      exit_delay
+          cpi       system_ticks, 250
+          brne      wait_250_ns
+          ret
+
+; ------------------------------------------------------------
+; LED SETTERS
+; ------------------------------------------------------------
+set_ns_green:
+          sbi PORTB, NS_GREEN
+          cbi PORTB, NS_YELLOW
+          cbi PORTB, NS_RED
+          sbi PORTB, NS_DONT_CROSS
+          cbi PORTB, NS_CROSS
+          ret
+set_ns_yellow:
+          cbi PORTB, NS_GREEN
+          sbi PORTB, NS_YELLOW
+          cbi PORTB, NS_RED
+          sbi PORTB, NS_DONT_CROSS
+          cbi PORTB, NS_CROSS
+          ret
+set_ns_red:
+          cbi PORTB, NS_GREEN
+          cbi PORTB, NS_YELLOW
+          sbi PORTB, NS_RED
+          sbi PORTB, NS_DONT_CROSS
+          cbi PORTB, NS_CROSS
+          ret
+set_ew_green:
+          sbi PORTC, EW_GREEN
+          cbi PORTC, EW_YELLOW
+          cbi PORTC, EW_RED
+          sbi PORTC, EW_DONT_CROSS
+          cbi PORTC, EW_CROSS
+          ret
+set_ew_yellow:
+          cbi PORTC, EW_GREEN
+          sbi PORTC, EW_YELLOW
+          cbi PORTC, EW_RED
+          sbi PORTC, EW_DONT_CROSS
+          cbi PORTC, EW_CROSS
+          ret
+set_ew_red:
+          cbi PORTC, EW_GREEN
+          cbi PORTC, EW_YELLOW
+          sbi PORTC, EW_RED
+          sbi PORTC, EW_DONT_CROSS
+          cbi PORTC, EW_CROSS
+          ret
