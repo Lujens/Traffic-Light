@@ -136,15 +136,23 @@ NS_Traffic_Cycle:
           brne      skip_ns_walk
           
           ; --- HANDLE NS WALK (Solid White) ---
-          sbi       PORTC, PC3
+          sbi       PORTC, PC1
+          call      delay_250_ticks
+          call      delay_250_ticks
+          cbi       PORTC, PC1
+          sbi       PORTC, PC3  
           sbi       PORTB, NS_CROSS
           cbi       PORTB, NS_DONT_CROSS
           ; EW stays Red.
           
           ; Solid White for 5s total (2.5s + 2.5s)
-          cbi       PORTC, PC1
           call      delay_250_ticks
           call      delay_250_ticks
+          cbi       PORTC, PC3
+          sbi       PORTC, PC2
+          call      delay_250_ticks
+          call      delay_250_ticks
+          cbi       PORTC, PC2
           cbi       PORTC, PC3
           sbi       PORTC, PC1
           call      delay_250_ticks
@@ -182,25 +190,33 @@ EW_Traffic_Cycle:
           brne      skip_ew_walk
           
           ; --- HANDLE EW WALK (Solid White) ---
-          sbi       PORTC, EW_CROSS
-          cbi       PORTC, EW_DONT_CROSS
-          sbi       PORTB, PB2
+          sbi       PORTB, PB4                    ;keep red light on
+          call      delay_250_ticks               ; wait for all the cars to pass with these delays so all the lights are red
+          call      delay_250_ticks
+          cbi       PORTB, PB4                    ; turn red light off
+          sbi       PORTB, PB2                    ; turn on ns_green_light
+          sbi       PORTC, EW_CROSS               ; turn on cross walk sign
+          cbi       PORTC, EW_DONT_CROSS          ; turn off "do not cross sign"
           
           ; Solid White for 5s total
-          cbi       PORTB, PB4
           call      delay_250_ticks
           call      delay_250_ticks
-          cbi       PORTB, PB2
-          sbi       PORTB, PB4
+          cbi       PORTB, PB2                    ; turn off ns_green light
+          sbi       PORTB, PB3                    ; turn on ns_yellow light 
           call      delay_250_ticks
+          call      delay_250_ticks
+          cbi       PORTB, PB3                    ; turn off ns_yellow light      
+          sbi       PORTB, PB4                    ; turn on ns_red light
+
+          ; end of the crosswalk
+          cbi       PORTC, EW_CROSS               ; turn off cross sign
+          sbi       PORTC, EW_DONT_CROSS          ; turn on cross sign
+          call      delay_250_ticks               ; delay for 5 seconds in total
+
           
           ; End Walk
-          cbi       PORTB, PB2
-          cbi       PORTC, EW_CROSS
-          sbi       PORTC, EW_DONT_CROSS
           clr       walkRequested_EW
           
-          call      delay_250_ticks
           rjmp      NS_Traffic_Cycle
 
 skip_ew_walk:
