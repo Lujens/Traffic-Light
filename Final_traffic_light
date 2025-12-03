@@ -1,21 +1,15 @@
 ; traffic_light_final.asm
-; Authors : Kailas Ugenskas, Lujens Pierre, Hector Toro
+; Authors : Kailas Ugenskas
 ; Desc    : Traffic light control with System Tick Interrupt (Req #3 fulfilled)
-;          
-
-; ------------------------------------------------------------
-; CONSTANTS
+;    
+; declare constants      
 ; ------------------------------------------------------------
 ; Timer0 10ms Tick Calculation:
 ; 16MHz / 1024 Prescaler = 15,625 ticks/sec
 ; 10ms = 156.25 ticks -> Use 156 for OCR0A
 .equ TICK_COMPARE = 156
 
-; Time Durations (in 10ms ticks)
-; r25 is 8-bit, max 255. We use 250 ticks = 2.5 seconds.
-; For 5 seconds, we call the delay twice.
-
-; Pins
+; Set variables to pin names
 .equ NS_GREEN = PB2
 .equ NS_YELLOW = PB3
 .equ NS_RED = PB4
@@ -34,10 +28,10 @@
 ; Register Definitions
 .def walkRequested_EW = r21
 .def walkRequested_NS = r22
-.def system_ticks     = r25  ; INCREMENTED BY TIMER INTERRUPT
+.def system_ticks     = r25  ; we increment this using the timer interrupt
 
-; ------------------------------------------------------------
-; VECTOR TABLE
+
+; vector table
 ; ------------------------------------------------------------
 .org 0x0000
           jmp       main
@@ -53,8 +47,8 @@
 
 .org INT_VECTORS_SIZE
 
-; ------------------------------------------------------------
-; MAIN CONFIGURATION
+
+; main config
 ; ------------------------------------------------------------
 main:
           ; Stack Setup
@@ -63,7 +57,7 @@ main:
           ldi       r16, low(RAMEND)
           out       SPL, r16
           
-          ; GPIO Setup (Outputs)
+          ; GPIO Setup (Output mode)
           sbi       DDRB, NS_GREEN
           sbi       DDRB, NS_YELLOW
           sbi       DDRB, NS_RED
@@ -82,14 +76,14 @@ main:
           cbi       DDRD, NS_BUTTON
           sbi       PORTD, NS_BUTTON
 
-          ; --- INTERRUPT SETUP (Requirement #2: External Interrupts) ---
+          ; interrupt setup
           ; INT0/INT1 Falling Edge
           ldi       r16, (1 << ISC11) | (1 << ISC01)
           sts       EICRA, r16
           ldi       r16, (1 << INT1) | (1 << INT0)
           out       EIMSK, r16
 
-          ; --- TIMER SETUP (Requirement #3: Hardware Timer Interrupt) ---
+          ; timer setup
           ; Configure Timer0 for CTC Mode, Prescaler 1024, 10ms interrupts
           ldi       r16, TICK_COMPARE
           out       OCR0A, r16
@@ -98,7 +92,7 @@ main:
           ldi       r16, (1 << WGM01)
           out       TCCR0A, r16
           
-          ; CS02=1, CS00=1 (Prescaler 1024)
+          ; CS02=1 and CS00=1 (Prescaler 1024)
           ldi       r16, (1 << CS02) | (1 << CS00)
           out       TCCR0B, r16
 
@@ -112,9 +106,11 @@ main:
           
           sei
 
+
+; main loop
 ; ------------------------------------------------------------
-; MAIN LOOP
-; ------------------------------------------------------------
+main_loop:
+
 NS_Traffic_Cycle:
           call      set_ns_green
           call      set_ew_red
@@ -127,15 +123,17 @@ NS_Traffic_Cycle:
           call      set_ns_yellow
           call      delay_250_ticks     ; ~2.5s
           
-          ; Red (Both Red Phase)
-          call      set_ns_red
-          call      set_ew_red
+          ; Red (Both should be red)
+          ; They are both red in this instance in case somebody runs a red light, so there's a buffer time for it to turn green
+          call      set_ns_red          ; ns is set to red
+          call      set_ew_red          ; ew is set to red
+
           
-          ; CHECK NS WALK
+          ; check NS walk
           cpi       walkRequested_NS, 1
           brne      skip_ns_walk
           
-          ; --- HANDLE NS WALK (Solid White) ---
+          ; This is what the crosswalk is going to look like
           sbi       PORTC, PC1
           call      delay_250_ticks
           call      delay_250_ticks
@@ -161,12 +159,12 @@ NS_Traffic_Cycle:
           sbi       PORTB, NS_DONT_CROSS
           clr       walkRequested_NS
           
-          ; Both Red Safety Buffer
+          ; Both red for aafety buffer
           call      delay_250_ticks
           rjmp      EW_Traffic_Cycle   ; Skip the normal red wait
 
 skip_ns_walk:
-          ; Normal "Both Red" safety delay
+          ; safety delay for when they're both red
           call      delay_250_ticks
           
 EW_Traffic_Cycle:
@@ -181,15 +179,15 @@ EW_Traffic_Cycle:
           call      set_ew_yellow
           call      delay_250_ticks
           
-          ; Red (Both Red Phase)
+          ; Red (when they're both red)
           call      set_ew_red
           call      set_ns_red
           
-          ; CHECK EW WALK
+          ; check ew walk
           cpi       walkRequested_EW, 1
           brne      skip_ew_walk
           
-          ; --- HANDLE EW WALK (Solid White) ---
+          ; checks EW walk
           sbi       PORTB, PB4                    ;keep red light on
           call      delay_250_ticks               ; wait for all the cars to pass with these delays so all the lights are red
           call      delay_250_ticks
@@ -223,8 +221,8 @@ skip_ew_walk:
           call      delay_250_ticks
           rjmp      NS_Traffic_Cycle
 
-; ------------------------------------------------------------
-; ISRs
+
+; ISR
 ; ------------------------------------------------------------
 Button_EW_ISR:
           push      r16
@@ -247,7 +245,7 @@ Button_NS_ISR:
           reti
 
 Timer_Tick_ISR:
-          ; Requirement #3: Periodic Interrupt maintains counter
+          
           push      r16
           in        r16, SREG
           push      r16
@@ -259,8 +257,8 @@ Timer_Tick_ISR:
           pop       r16
           reti
 
-; ------------------------------------------------------------
-; DELAY FUNCTIONS (Using Tick Counter)
+
+; delay functions (we use tick counter)
 ; ------------------------------------------------------------
 delay_250_ticks:
           ; Wait for system_ticks to count up to 250 (2.5 seconds)
@@ -289,8 +287,7 @@ wait_250_ns:
           brne      wait_250_ns
           ret
 
-; ------------------------------------------------------------
-; LED SETTERS
+; led light set functions
 ; ------------------------------------------------------------
 set_ns_green:
           sbi PORTB, NS_GREEN
